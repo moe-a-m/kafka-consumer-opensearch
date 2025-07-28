@@ -36,7 +36,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Properties;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -56,7 +55,6 @@ public class OpenSearchConsumer {
     // --- Configuration ---
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_BACKOFF_MS = 1000;
-    private static final int BATCH_SIZE = 500; // Configurable batch size
     private static final Duration POLL_TIMEOUT = Duration.ofMillis(3000);
 
     // --- Shutdown Control ---
@@ -94,7 +92,7 @@ public class OpenSearchConsumer {
         properties.setProperty(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "127.0.0.1:19092");
         properties.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        properties.put(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString()); // Unique group ID
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId); // Unique group ID
         properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // Manual commit for control
         // Add health check related configs if needed, e.g., timeouts
@@ -176,7 +174,7 @@ public class OpenSearchConsumer {
     }
 
     // --- Retry Logic ---
-    private static BulkResponse performBulkIndexWithRetry(OpenSearchClient client, BulkRequest request, String index) throws IOException, InterruptedException {
+    private static BulkResponse performBulkIndexWithRetry(OpenSearchClient client, BulkRequest request) throws IOException, InterruptedException {
         IOException lastException = null;
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -224,20 +222,20 @@ public class OpenSearchConsumer {
         log.info("========================");
     }
 
-    public static void main(String[] args) throws IOException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException, InterruptedException {
-        OpenSearchClient opensearchClient = null;
+    public static void main(String[] args) {
         KafkaConsumer<String, String> consumer = null;
 
         try {
-            opensearchClient = createOpenSearchClient();
+            OpenSearchClient opensearchClient = createOpenSearchClient();
             consumer = createKafkaConsumer();
 
             // --- Health Checks ---
             log.info("Performing initial health checks...");
-            if (!isOpenSearchHealthy(opensearchClient)) {
+            if (isOpenSearchHealthy(opensearchClient)) {
+                log.info("OpenSearch connection healthy.");
+            } else {
                 throw new RuntimeException("OpenSearch is not healthy at startup");
             }
-            log.info("OpenSearch connection healthy.");
 
             String index = "wikimedia";
             createIndexWithDynamicMapping(opensearchClient, index);
@@ -252,12 +250,10 @@ public class OpenSearchConsumer {
                 if (shutdownInitiated.compareAndSet(false, true)) { // Ensure only one shutdown sequence
                     log.info("Initiating graceful shutdown...");
                     // Wake up the consumer if it's blocked in poll()
-                    if (finalConsumer != null) {
-                        try {
-                            finalConsumer.wakeup();
-                        } catch (Exception e) {
-                            log.warn("Exception during consumer wakeup", e);
-                        }
+                    try {
+                        finalConsumer.wakeup();
+                    } catch (Exception e) {
+                        log.warn("Exception during consumer wakeup", e);
                     }
 
                     try {
@@ -328,7 +324,7 @@ public class OpenSearchConsumer {
                                     .refresh(Refresh.WaitFor) // Consider if this is needed for every bulk
                                     .build();
 
-                            BulkResponse bulkResponse = performBulkIndexWithRetry(opensearchClient, bulkRequest, index);
+                            BulkResponse bulkResponse = performBulkIndexWithRetry(opensearchClient, bulkRequest);
 
                             log.info("Bulk response items: {}, errors: {}", bulkResponse.items().size(), bulkResponse.errors());
 
