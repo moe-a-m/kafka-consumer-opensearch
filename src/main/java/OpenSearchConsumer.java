@@ -78,7 +78,7 @@ public class OpenSearchConsumer {
                     final var tlsStrategy = ClientTlsStrategyBuilder.create()
                             .setSslContext(sslContext)
                             .setHostnameVerifier(NoopHostnameVerifier.INSTANCE)
-                            .build();
+                            . buildAsync();
                     final var connectionManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build();
                     return httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider).setConnectionManager(connectionManager);
                 })
@@ -217,8 +217,8 @@ public class OpenSearchConsumer {
         log.info("  Total Records Indexed: {}", totalIndexed);
         log.info("  Total Index Errors: {}", errors);
         log.info("  Current Batch Size: {}", currentBatch);
-        log.info("  Avg Processing Time/Record (ms): {:.2f}", avgProcessingTimePerRecord);
-        log.info("  Avg Indexing Time/Record (ms): {:.2f}", avgIndexingTimePerRecord);
+        log.info("  Avg Processing Time/Record (ms): %.2f".formatted(avgProcessingTimePerRecord));
+        log.info("  Avg Indexing Time/Record (ms): %.2f".formatted(avgIndexingTimePerRecord));
         log.info("========================");
     }
 
